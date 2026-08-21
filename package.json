@@ -1,0 +1,29 @@
+{
+  "name": "zendra",
+  "version": "1.0.0",
+  "description": "Codebase Q&A assistant: ask natural-language questions about a repo and get answers with file:line citations, using AST-aware chunking and hybrid (keyword + semantic) search.",
+  "main": "src/cli.js",
+  "scripts": {
+    "cli": "node src/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhiman-06/zendra.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/abhiman-06/zendra/issues"
+  },
+  "homepage": "https://github.com/abhiman-06/zendra#readme",
+  "dependencies": {
+    "@babel/parser": "^8.0.4",
+    "@babel/traverse": "^8.0.4",
+    "@qdrant/js-client-rest": "^1.19.0",
+    "dotenv": "^17.4.2",
+    "minisearch": "^7.2.0",
+    "openai": "^7.5.0"
+  }
+}
