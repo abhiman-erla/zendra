@@ -31,7 +31,7 @@ app.post("/ingest", async (req, res) => {
 
     const absPath = path.resolve(repoPath);
     const files = walkRepo(absPath);
-    const chunks = chunkFiles(files);
+    const chunks = await chunkFiles(files);
 
     fs.mkdirSync(INDEX_DIR, { recursive: true });
     fs.writeFileSync(CHUNKS_FILE, JSON.stringify({ repoPath: absPath, chunks }, null, 2));

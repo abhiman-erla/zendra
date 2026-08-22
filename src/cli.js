@@ -15,7 +15,7 @@ const CHUNKS_FILE = path.join(INDEX_DIR, "chunks.json");
 async function ingest(repoPath) {
   const absPath = path.resolve(repoPath);
   const files = walkRepo(absPath);
-  const chunks = chunkFiles(files);
+  const chunks = await chunkFiles(files);
 
   console.log(`Found ${files.length} source file(s), extracted ${chunks.length} chunk(s):\n`);
   for (const chunk of chunks) {

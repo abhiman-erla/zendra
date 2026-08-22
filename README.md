@@ -31,6 +31,13 @@ This is a Retrieval-Augmented Generation (RAG) system, purpose-built for code in
 
 **Next up:** all 7 phases are done. Optional polish: automated tests, incremental re-ingest (only re-embed changed chunks instead of a full rebuild), auth/rate-limiting on the Express API before deploying it anywhere public.
 
+**Java support (2026-08-22):** tested Zendra against a real external full-stack project (`zenos` — Next.js/TS frontend + Spring Boot/Java backend). Two real bugs surfaced and got fixed:
+- **`astChunker.js`** was silently dropping every *exported* top-level function/class/const (`export function`, `export default function`, `export const foo = () => {}`) — it checked `path.parent.type === "Program"`, which is never true once wrapped in an export node. Since virtually all real-world code exports its top-level declarations, this made the tool nearly blind on any real project (17 chunks came back from zenos's frontend before the fix; 55 after). Fixed by walking through the export wrapper when checking top-level-ness.
+- **`walkRepo.js`** didn't skip `.next`/`.turbo`/`coverage`/`.cache` — ingesting a Next.js project pulled in compiled build output as "source code." Fixed by adding those to `SKIP_DIRS`.
+- **Added Java parsing** via `web-tree-sitter` + the `tree-sitter-java` grammar (`src/ingest/javaChunker.js`): extracts methods/constructors from classes, interfaces, enums, and records — same "don't chunk the whole class as a blob" philosophy as the JS/TS chunker. `chunkFiles` now dispatches by file extension (`.java` → tree-sitter, `.js`/`.ts`/`.jsx`/`.tsx` → Babel) and is now `async`. `walkRepo.js` also now picks up `.java` files and skips Maven's `target/`.
+  - **Note:** `web-tree-sitter@0.26.x` failed to load `tree-sitter-wasms`' prebuilt `.wasm` grammars (ABI/dylink mismatch) — pinned to `web-tree-sitter@0.25.10`, which loads them correctly.
+- **Verified live** on zenos's real backend: `ask "how is the JWT token generated and validated on the backend?"` returned a fully accurate answer (including a verbatim code snippet) citing `JwtService.generateToken`, `isTokenValid`, `isTokenExpired`, and `JwtAuthenticationFilter.doFilterInternal` — checked line-by-line against the actual file, no discrepancies.
+
 ---
 
 ## Tech stack
@@ -38,7 +45,7 @@ This is a Retrieval-Augmented Generation (RAG) system, purpose-built for code in
 | Layer | Tool | Why |
 |---|---|---|
 | Runtime | Node.js | Requested stack |
-| Code parsing | `@babel/parser` + `@babel/traverse` | Parses JS/TS into an AST we can walk |
+| Code parsing | `@babel/parser` + `@babel/traverse` (JS/TS/JSX/TSX); `web-tree-sitter` + `tree-sitter-java` (Java) | Parses source into an AST we can walk, per language |
 | Keyword search | `minisearch` | Pure JS, no external server, good exact-match search |
 | Embeddings | Voyage AI or OpenAI embeddings API | Turns code chunks + queries into vectors for semantic search |
 | Vector storage + search | Qdrant (free tier / local Docker) | Stores embeddings, does similarity search, supports metadata filters |
@@ -90,8 +97,9 @@ codebase-qa/
 ├── package.json
 ├── src/
 │   ├── ingest/
-│   │   ├── walkRepo.js        # find all source files in a repo folder      ✅ done
-│   │   └── astChunker.js      # parse + chunk each file (function/class/method level)  ✅ done
+│   │   ├── walkRepo.js        # find all source files in a repo folder      ✅ done (JS/TS/JSX/TSX/Java)
+│   │   ├── astChunker.js      # parse + chunk JS/TS files, dispatches .java to javaChunker  ✅ done
+│   │   └── javaChunker.js     # parse + chunk Java files via tree-sitter (methods/constructors)  ✅ done
 │   ├── index/
 │   │   ├── keywordIndex.js    # MiniSearch setup, add/search                ✅ done
 │   │   └── vectorIndex.js     # Qdrant client, embed + store + search       ✅ done

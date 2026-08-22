@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build"]);
+const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".java"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", ".turbo", "coverage", ".cache", "target"]);
 
 function walkRepo(repoPath) {
   const files = [];
