@@ -11,23 +11,25 @@ This is a Retrieval-Augmented Generation (RAG) system, purpose-built for code in
 
 ---
 
-## Status (as of 2026-08-21)
+## Status (as of 2026-08-22)
 
 | Phase | Status | Notes |
 |---|---|---|
 | 1 — Ingest + AST chunking | ✅ Done | `walkRepo.js`, `astChunker.js` implemented and working |
 | 2 — Keyword search | ✅ Done | `keywordIndex.js` + `ingest`/`search` CLI commands |
-| 3 — Embeddings + vector search | ✅ Done (partial deviation) | `vectorIndex.js` + `vsearch` CLI command, using **OpenAI** embeddings (`text-embedding-3-small`) rather than Voyage AI; env var is `OPENAI_API_KEY`, not `EMBEDDINGS_API_KEY` as spec'd below |
-| 4 — Hybrid search (RRF merge) | ⬜ Not started | No `src/search/hybridSearch.js` yet — `search` and `vsearch` are still separate CLI commands, not merged |
-| 5 — Answer generation with citations | ⬜ Not started | No `src/generate/answerQuestion.js`, no Claude API call, no `ask` CLI command |
-| 6 — Express API | ⬜ Not started | No `server/` directory, no Express dependency yet |
-| 7 — Web UI | ⬜ Not started | Optional, last |
+| 3 — Embeddings + vector search | ✅ Done & verified end-to-end | `vectorIndex.js` + `vsearch` CLI command, using **OpenAI** embeddings (`text-embedding-3-small`) rather than Voyage AI; env var is `OPENAI_API_KEY`, not `EMBEDDINGS_API_KEY` as spec'd below. Ran live against a real `OPENAI_API_KEY` + local Qdrant (Docker): `ingest .` embedded and upserted 26 chunks, `vsearch` returned correct results for a paraphrased query with no keyword overlap (found `walkRepo` for "how does the tool find source files in a folder"). Fixed a real bug found during this run: `client.search()` doesn't exist in the installed `@qdrant/js-client-rest@1.19` — replaced with `client.query()`, which returns `{ points: [...] }` instead of a bare array |
+| 4 — Hybrid search (RRF merge) | ✅ Done & verified | `src/search/hybridSearch.js` implements RRF (`k=60`), merges keyword + vector candidate lists (4x limit each), dedupes by chunk id; new `hsearch` CLI command |
+| 5 — Answer generation with citations | ✅ Done & verified | `src/generate/answerQuestion.js` + `ask` CLI command implemented (`@anthropic-ai/sdk`). Uses `claude-haiku-4-5` (chosen over the spec'd Sonnet for lower cost on this hobby project — user's explicit call). Runs `hybridSearch`, builds a prompt from the top 5 chunks with file:line headers, asks Claude to answer using only those excerpts and cite file:line for every claim. **Verified 2026-08-22:** ran `node src/cli.js ask "how does this tool find source files in a repo?"` against this repo with a real `ANTHROPIC_API_KEY` — answer correctly named `walkRepo` (`src/ingest/walkRepo.js:7-26`) with accurate implementation details, not hallucinated |
+| 6 — Express API | ✅ Done & verified | `server/index.js` — `POST /ingest` and `POST /ask` wrapping the same `src/` pipeline functions, no new logic. Verified live: `curl -X POST /ask` returned a correctly-cited JSON answer |
+| 7 — Web UI | ✅ Done & verified | `server/public/index.html` — single page, question input, answer + source citations rendered below. Serves already-ingested data (`.index/chunks.json` + Qdrant) rather than accepting file/repo uploads — deliberate scope choice, user confirmed. Verified: opened in a real browser via `npm run server`, page loads and renders |
 
 **Other gaps not tied to a specific phase:**
 - No automated test suite runs yet (only `test/fixtures/sample.js` exists as chunker input, no test runner/assertions or `test` script in `package.json`).
-- No `.env` committed (correct — only `.env.example` is), but real keys are needed locally to exercise Phase 3.
+- `.env` has working `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` (gitignored, not committed). Local Qdrant is running via `docker run -d -p 6333:6333 --name zendra-qdrant qdrant/qdrant`.
+- Added `balance sheet/` (gitignored `usage.json`, tracked `track.js` + `checkBalance.js`): every OpenAI embedding call and every Claude `ask` call logs its token count, and `node "balance sheet/checkBalance.js"` prints estimated cumulative spend for **both** providers against assumed starting balances ($5 OpenAI, $15 Anthropic — both user-specified). This is a **local estimate only**, not a live account balance — neither provider exposes real-time dollar balance to a plain API key (confirmed by testing OpenAI's billing endpoints directly and getting 403s). Check the authoritative numbers at OpenAI's and Anthropic's own billing dashboards (linked in the script's output).
+- **Bug fixed 2026-08-22:** `vsearch`/`hsearch` were returning stale duplicate chunks — Qdrant point IDs are derived from `filePath:startLine-endLine:name`, so any code edit that shifted a chunk's line numbers left the old, now-inaccurate point sitting in Qdrant forever instead of being replaced (found via `vsearch` returning `searchVector` at two different, one outdated, line ranges). Fixed by having `ensureCollection` in `vectorIndex.js` delete and recreate the Qdrant collection on every `ingest`, matching how `.index/chunks.json` is already fully rebuilt (not incrementally updated) on every run. Verified: re-ran the same query, only the current, correct line range comes back.
 
-**Next up:** Phase 4 (hybrid search / RRF merge), then Phase 5 (answer generation).
+**Next up:** all 7 phases are done. Optional polish: automated tests, incremental re-ingest (only re-embed changed chunks instead of a full rebuild), auth/rate-limiting on the Express API before deploying it anywhere public.
 
 ---
 
@@ -94,12 +96,17 @@ codebase-qa/
 │   │   ├── keywordIndex.js    # MiniSearch setup, add/search                ✅ done
 │   │   └── vectorIndex.js     # Qdrant client, embed + store + search       ✅ done
 │   ├── search/
-│   │   └── hybridSearch.js    # keyword + vector search, RRF merge          ⬜ not started
+│   │   └── hybridSearch.js    # keyword + vector search, RRF merge          ✅ done
 │   ├── generate/
-│   │   └── answerQuestion.js  # build prompt from chunks, call Claude, return answer + citations  ⬜ not started
-│   └── cli.js                 # CLI entrypoint: `node src/cli.js ingest <repo>` / `ask "<question>"`  ⬜ ask command not implemented; ingest/search/vsearch are
+│   │   └── answerQuestion.js  # build prompt from chunks, call Claude, return answer + citations  ✅ done
+│   └── cli.js                 # CLI entrypoint: ingest/search/vsearch/hsearch/ask all implemented
 ├── server/
-│   └── index.js                # Express API wrapping the same pipeline (build after CLI works)  ⬜ not started
+│   ├── index.js                # Express API wrapping the same pipeline  ✅ done
+│   └── public/
+│       └── index.html          # single-page UI: ask a question, see answer + citations  ✅ done
+├── balance sheet/
+│   ├── track.js                # logs OpenAI + Anthropic token usage to usage.json (gitignored)
+│   └── checkBalance.js         # prints estimated cumulative spend for both providers vs. assumed starting balances
 └── README.md
 ```
 
@@ -132,7 +139,7 @@ codebase-qa/
 - CLI command: `node src/cli.js search "some query"` — prints top 5 keyword matches with file:line.
 - **Test it:** confirm exact-name queries (e.g. a real function name from the repo) return that function at the top.
 
-### Phase 3 — Embeddings + vector search ✅ Done (using OpenAI, not Voyage)
+### Phase 3 — Embeddings + vector search ✅ Done & verified (using OpenAI, not Voyage)
 
 **Goal:** add semantic search alongside keyword search.
 
@@ -144,41 +151,50 @@ codebase-qa/
   - function to embed a query and do a similarity search against that collection
 - Update the ingest CLI command to also embed + store every chunk in Qdrant after keyword-indexing it.
 - **Test it:** run a conceptual/paraphrased query (not an exact function name) and confirm it finds semantically related code even without exact word matches.
+- **Verified 2026-08-21:** ran live with a real `OPENAI_API_KEY` and local Qdrant (Docker container `zendra-qdrant`). `node src/cli.js ingest .` embedded 26 chunks from this repo and upserted them into Qdrant. `node src/cli.js vsearch "how does the tool find source files in a folder"` (no keyword overlap with the code) correctly returned `walkRepo` as the top match. Keyword search (`search "walkRepo"`) still works as expected.
+- **Bug fixed during verification:** `searchVector` in `vectorIndex.js` called `client.search(...)`, which doesn't exist on the installed `@qdrant/js-client-rest@1.19` client — that method was replaced with `client.query(collection, { query: vector, limit, with_payload: true })`, which returns `{ points: [...] }` instead of a bare array. Updated the code to match.
 
-### Phase 4 — Hybrid search (merge keyword + vector results) ⬜ Not started
+### Phase 4 — Hybrid search (merge keyword + vector results) ✅ Done & verified
 
 **Goal:** one search function that combines both result lists.
 
-- `src/search/hybridSearch.js`: implement Reciprocal Rank Fusion —
+- `src/search/hybridSearch.js`: implements Reciprocal Rank Fusion —
   ```js
-  score += 1 / (k + rank + 1)   // k = 60 is a standard default
+  score += 1 / (k + rank + 1)   // k = 60
   ```
-  merge results from keyword search and vector search by this scoring, dedupe by chunk id, return top N.
-- **Test it:** re-run the same two test queries from Phase 2 and Phase 3 through hybrid search, confirm results make sense for both exact-name and conceptual queries.
+  Pulls `limit * 4` candidates from each of keyword search and vector search, merges by RRF score, dedupes by chunk id (`makeChunkId`), returns top N.
+- New CLI command: `node src/cli.js hsearch "<query>"` — prints top 5 hybrid matches with file:line and RRF score.
+- **Verified 2026-08-21:** re-ran both test queries from Phase 2/3 through `hsearch` — `"walkRepo"` (exact name) and `"how does the tool find source files in a folder"` (paraphrased, no keyword overlap) — both correctly return `walkRepo` as the top result.
 
-### Phase 5 — Answer generation with citations ⬜ Not started
+### Phase 5 — Answer generation with citations ✅ Done & verified
 
 **Goal:** given a question, return a natural-language answer plus the exact sources used.
 
 - `src/generate/answerQuestion.js`:
-  - run hybrid search, take top ~5 chunks
+  - run hybrid search, take top 5 chunks
   - build a prompt: system instruction ("answer using only the provided code, cite file:line for any claim") + the chunks (formatted with their file/line headers) + the user's question
-  - call the Claude API, return `{ answer, sources: [{filePath, startLine, endLine, name}] }`
+  - call the Claude API (`claude-haiku-4-5`, `@anthropic-ai/sdk`), return `{ answer, sources: [{filePath, startLine, endLine, name, kind}] }`
 - CLI command: `node src/cli.js ask "where is authentication handled?"` — prints answer + source list.
+- **Model choice:** the spec suggested `claude-sonnet-4-6`; built against `claude-haiku-4-5` instead — cheapest current tier, explicitly chosen over pricier models for this project. Swap `MODEL` in `answerQuestion.js` to `claude-opus-5` or another model if answer quality isn't good enough.
 - **Test it:** ask several realistic questions about the ingested repo, verify citations point to the actually-relevant code, not hallucinated locations.
+- **Verified 2026-08-22:** `node src/cli.js ask "how does this tool find source files in a repo?"` against this repo — answer correctly identified `walkRepo` (`src/ingest/walkRepo.js:7-26`), described its actual implementation (recursive walk, `SKIP_DIRS`, `SOURCE_EXTENSIONS` filter), and the top source citation matched. No hallucinated file/line.
 
-### Phase 6 — Wrap it in an Express API ⬜ Not started
+### Phase 6 — Wrap it in an Express API ✅ Done & verified
 
 **Goal:** expose the same pipeline over HTTP so a UI (or anyone) can call it.
 
 - `POST /ingest` — body: `{ repoPath }` — runs ingest pipeline
 - `POST /ask` — body: `{ question }` — returns `{ answer, sources }`
 - Keep this thin — it should just call the same functions from `src/`, no new logic here.
+- `server/index.js` — thin wrapper as specified: reuses `walkRepo`, `chunkFiles`, `upsertChunks`, `answerQuestion` directly, no duplicated logic. Serves the Phase 7 static UI from `server/public/`.
+- **Verified 2026-08-22:** started with `npm run server`, hit both routes with `curl` — `POST /ask` on this repo returned a correctly-cited JSON answer identical in quality to the CLI's `ask` command.
 
-### Phase 7 (optional, do last) — Minimal web UI ⬜ Not started
+### Phase 7 — Minimal web UI ✅ Done & verified
 
-- A single page: text input for a question, submit button, answer + clickable source citations displayed below.
-- Not required for the project to be "done" — the CLI + API alone are a complete, demoable project.
+- A single page (`server/public/index.html`): text input for a question, submit button, answer + source citations displayed below (as styled chips — kept as plain text/chips rather than clickable links, since there's no meaningful local target to link to without a file-serving layer).
+- **Scope decision (user-confirmed):** the site queries whatever repo has already been `ingest`-ed locally (`.index/chunks.json` + Qdrant) — it does not accept a document/repo upload through the browser. Simpler, and matches how the CLI already works.
+- **Verified 2026-08-22:** opened `http://localhost:3000` in a real browser after `npm run server`; page renders, question box works end-to-end against the live API.
+- **Polish pass (user-requested):** restyled with a gold-on-black theme (serif gradient wordmark, gold-glow input focus, gradient gold button, gold-accented answer card and source chips). Also fixed answers rendering raw markdown (`**bold**`, `` `code` ``) as literal asterisks/backticks — `renderAnswer()` now escapes the text first, then converts just those two patterns to styled `<strong>`/`<code>` so nothing else in the answer can inject HTML.
 
 ---
 

@@ -6,6 +6,8 @@ const { walkRepo } = require("./ingest/walkRepo");
 const { chunkFiles } = require("./ingest/astChunker");
 const { buildKeywordIndex, searchKeyword } = require("./index/keywordIndex");
 const { upsertChunks, searchVector } = require("./index/vectorIndex");
+const { hybridSearch } = require("./search/hybridSearch");
+const { answerQuestion } = require("./generate/answerQuestion");
 
 const INDEX_DIR = path.resolve(__dirname, "..", ".index");
 const CHUNKS_FILE = path.join(INDEX_DIR, "chunks.json");
@@ -90,6 +92,40 @@ async function vsearch(query) {
   return results;
 }
 
+async function hsearch(query) {
+  const { repoPath, chunks } = loadChunks();
+  const results = await hybridSearch(chunks, query, 5);
+
+  if (results.length === 0) {
+    console.log("No matches found.");
+    return results;
+  }
+
+  console.log(`Top ${results.length} hybrid match(es) for "${query}":\n`);
+  for (const result of results) {
+    const relPath = path.relative(repoPath, result.filePath);
+    console.log(
+      `[${result.kind}] ${result.name}  (${relPath}:${result.startLine}-${result.endLine})  score=${result.score.toFixed(4)}`
+    );
+  }
+
+  return results;
+}
+
+async function ask(question) {
+  const { repoPath, chunks } = loadChunks();
+  const { answer, sources } = await answerQuestion(chunks, question);
+
+  console.log(`Answer:\n${answer}\n`);
+  console.log("Sources:");
+  for (const s of sources) {
+    const relPath = path.relative(repoPath, s.filePath);
+    console.log(`  [${s.kind}] ${s.name}  (${relPath}:${s.startLine}-${s.endLine})`);
+  }
+
+  return { answer, sources };
+}
+
 async function main() {
   const [, , command, ...args] = process.argv;
 
@@ -121,9 +157,27 @@ async function main() {
       await vsearch(query);
       break;
     }
+    case "hsearch": {
+      const query = args.join(" ");
+      if (!query) {
+        console.error('Usage: node src/cli.js hsearch "<query>"');
+        process.exit(1);
+      }
+      await hsearch(query);
+      break;
+    }
+    case "ask": {
+      const question = args.join(" ");
+      if (!question) {
+        console.error('Usage: node src/cli.js ask "<question>"');
+        process.exit(1);
+      }
+      await ask(question);
+      break;
+    }
     default:
       console.error(
-        `Unknown command: ${command || "(none)"}\nUsage:\n  node src/cli.js ingest <repoPath>\n  node src/cli.js search "<query>"\n  node src/cli.js vsearch "<query>"`
+        `Unknown command: ${command || "(none)"}\nUsage:\n  node src/cli.js ingest <repoPath>\n  node src/cli.js search "<query>"\n  node src/cli.js vsearch "<query>"\n  node src/cli.js hsearch "<query>"\n  node src/cli.js ask "<question>"`
       );
       process.exit(1);
   }

@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const OpenAI = require("openai");
 const { QdrantClient } = require("@qdrant/js-client-rest");
 const { makeChunkId } = require("./keywordIndex");
+const { recordEmbeddingUsage } = require("../../balance sheet/track");
 
 const COLLECTION_NAME = "codebase_chunks";
 const EMBEDDING_MODEL = "text-embedding-3-small";
@@ -37,18 +38,27 @@ async function embedTexts(openai, texts) {
     const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
     const response = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: batch });
     vectors.push(...response.data.map((d) => d.embedding));
+    if (response.usage?.total_tokens) {
+      recordEmbeddingUsage(response.usage.total_tokens);
+    }
   }
   return vectors;
 }
 
+// Recreates the collection from scratch on every ingest. `ingest` already
+// rebuilds .index/chunks.json wholesale each run (not incremental), so doing
+// the same here keeps the two indexes consistent — otherwise a chunk whose
+// line numbers shift (any edit above it) gets a new point ID and the old,
+// now-stale point lingers in Qdrant forever instead of being replaced.
 async function ensureCollection(client) {
   const { collections } = await client.getCollections();
   const exists = collections.some((c) => c.name === COLLECTION_NAME);
-  if (!exists) {
-    await client.createCollection(COLLECTION_NAME, {
-      vectors: { size: VECTOR_SIZE, distance: "Cosine" },
-    });
+  if (exists) {
+    await client.deleteCollection(COLLECTION_NAME);
   }
+  await client.createCollection(COLLECTION_NAME, {
+    vectors: { size: VECTOR_SIZE, distance: "Cosine" },
+  });
 }
 
 async function upsertChunks(chunks) {
@@ -81,9 +91,9 @@ async function searchVector(query, limit = 5) {
   const client = getQdrantClient();
 
   const [vector] = await embedTexts(openai, [query]);
-  const results = await client.search(COLLECTION_NAME, { vector, limit });
+  const { points } = await client.query(COLLECTION_NAME, { query: vector, limit, with_payload: true });
 
-  return results.map((r) => ({ ...r.payload, score: r.score }));
+  return points.map((r) => ({ ...r.payload, score: r.score }));
 }
 
 module.exports = { upsertChunks, searchVector, chunkPointId, COLLECTION_NAME };
