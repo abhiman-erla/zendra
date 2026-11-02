@@ -5,15 +5,16 @@
   "main": "src/cli.js",
   "scripts": {
     "cli": "node src/cli.js",
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/abhiman-erla/zendra.git"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Abhiman Sathwik Erla",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/abhiman-erla/zendra/issues"
@@ -30,5 +31,8 @@
     "openai": "^7.5.0",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.25.10"
+  },
+  "overrides": {
+    "undici": "7.30.1"
   }
 }
