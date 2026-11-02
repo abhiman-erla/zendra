@@ -9,16 +9,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abhiman-06/zendra.git"
+    "url": "git+https://github.com/abhiman-erla/zendra.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/abhiman-06/zendra/issues"
+    "url": "https://github.com/abhiman-erla/zendra/issues"
   },
-  "homepage": "https://github.com/abhiman-06/zendra#readme",
+  "homepage": "https://github.com/abhiman-erla/zendra#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "@babel/parser": "^8.0.4",
